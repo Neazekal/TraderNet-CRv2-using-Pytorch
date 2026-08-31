@@ -7,9 +7,9 @@ from metrics.metric import Metric
 class TradingEnvironment(gym.Env):
     def __init__(self, env_config: dict):
         super().__init__()
-        
+
         assert 'states' in env_config, 'AssertionError: Expected "states" in env_config'
-        assert 'reward_fn' in env_config, 'AssertionError: Expected "reward_function" in env_config'
+        assert 'reward_fn' in env_config, 'AssertionError: Expected "reward_fn" in env_config'
         assert 'episode_steps' in env_config, 'AssertionError: Expected "episode_steps" in env_config'
         assert 'metrics' in env_config, 'AssertionError: Expected "metrics" in env_config'
 
@@ -22,6 +22,8 @@ class TradingEnvironment(gym.Env):
 
         if self._metrics is None:
             self._metrics = []
+        if self._rules is None:
+            self._rules = []
 
         self._num_states = self._states.shape[0] - 1
 
@@ -30,6 +32,7 @@ class TradingEnvironment(gym.Env):
             f'num_states = {self._num_states}, episode_steps = {self._episode_steps}'
 
         self._state_index = 0
+        self._episode_step_count = 0
 
         # Use fixed 0-1 bounds for observation space to ensure compatibility
         # between training and evaluation environments when data is normalized.
@@ -46,7 +49,10 @@ class TradingEnvironment(gym.Env):
 
     @property
     def metrics(self) -> list[Metric]:
-        return self._metrics
+        return list(self._metrics)
+
+    def get_metrics(self) -> tuple[Metric, ...]:
+        return tuple(self._metrics)
 
     def update_metrics(self, log_pnl: float):
         for metric in self._metrics:
@@ -58,36 +64,45 @@ class TradingEnvironment(gym.Env):
 
     def reset(self, seed=None, options=None) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
+        self._episode_step_count = 0
         for metric in self._metrics:
             metric.reset()
+        for rule in self._rules:
+            rule.reset()
         return self._states[self._state_index], {}
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
+        effective_action = int(action)
         # Apply safety rules to filter the action
         for rule in self._rules:
-            action = rule.filter(action)
-        
-        reward = self._reward_function.get_reward(i=self._state_index, action=action)
+            effective_action = rule.filter(effective_action)
+
+        reward = float(self._reward_function.get_reward(i=self._state_index, action=effective_action))
 
         self._state_index += 1
+        self._episode_step_count += 1
         next_state = self._states[self._state_index]
 
-        if self._state_index == self._num_states:
+        terminated = False
+        if self._state_index >= self._num_states:
             terminated = True
             self._state_index = 0
-        elif self._state_index % self._episode_steps == 0:
+        elif self._episode_step_count >= self._episode_steps:
             terminated = True
-        else:
-            terminated = False
 
         truncated = False
 
-        log_pnl = 0.0 if action == Action.HOLD.value else reward
+        log_pnl = 0.0 if effective_action == Action.HOLD.value else reward
         self.update_metrics(log_pnl=log_pnl)
 
         if terminated:
             self.register_metrics()
-        return next_state, reward, terminated, truncated, {}
+
+        info = {
+            "action": effective_action,
+            "log_pnl": log_pnl
+        }
+        return next_state, reward, terminated, truncated, info
 
     def render(self):
         print('\n--- Current State ---')

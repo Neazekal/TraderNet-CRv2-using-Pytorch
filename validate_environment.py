@@ -1,46 +1,93 @@
+import sys
 import numpy as np
-import pandas as pd
-import config
-from sklearn.preprocessing import MinMaxScaler
 from stable_baselines3.common.env_checker import check_env
-from database.datasets.targets.market_limit_orders_builder import MarketLimitOrdersBuilder
-from database.datasets.utils import split_train_test
-from environments.environment import TradingEnvironment
-from environments.rewards import RewardFunction
+from environments.actions import Action
+from environments.factory import build_trading_environment
+from environments.rewards.marketlimitorder import MarketLimitOrderRF
+from database.datasets.utils import construct_timeframes
 
-timeframe_len = 12
-target_horizon_len = 12
-num_eval_samples = 720
-fees_percentage = 0.01
-episode_steps = 120
 
-df = pd.read_csv(config.dataset_save_filepath.format('BTC'))
+def main():
+    try:
+        # 1. Generate synthetic normalized float32 states and monotonic OHLC
+        num_samples = 200
+        num_features = 19
+        timeframe_len = 12
+        target_horizon_len = 20
+        fees = 0.007
+        episode_steps = 50
 
-targets = MarketLimitOrdersBuilder().build_targets(
-    timeframe_len=timeframe_len,
-    target_horizon_len=target_horizon_len,
-    closes=df['close'].to_numpy(dtype=np.float64),
-    highs=df['high'].to_numpy(dtype=np.float64),
-    lows=df['low'].to_numpy(dtype=np.float64)
-)
-data = df[config.regression_features].to_numpy(dtype=np.float32)
+        # Feature matrix normalized in [0.0, 1.0]
+        raw_features = np.linspace(0.1, 0.9, num_samples * num_features, dtype=np.float32).reshape(num_samples, num_features)
+        states = construct_timeframes(raw_features, timeframe_len=timeframe_len, target_horizon_len=target_horizon_len)
 
-scaler = MinMaxScaler()
-num_samples_to_scale = data.shape[0] - num_eval_samples - timeframe_len + 1
-data[: num_samples_to_scale] = scaler.fit_transform(data[: num_samples_to_scale])
-data[num_samples_to_scale:] = scaler.transform(data[num_samples_to_scale:])
-inputs = np.float32([data[i: i+timeframe_len] for i in range(data.shape[0]-timeframe_len-target_horizon_len+1)])
+        # Monotonic OHLC prices
+        closes = np.linspace(100.0, 200.0, num_samples, dtype=np.float32)
+        highs = closes + 1.0
+        lows = closes - 1.0
 
-x_train, y_train, x_test, y_test = split_train_test(inputs=inputs, targets=targets, num_eval_samples=num_eval_samples)
-train_reward_fn = RewardFunction(targets=y_train, fees_percentage=fees_percentage)
+        reward_fn = MarketLimitOrderRF(
+            timeframe_size=timeframe_len,
+            target_horizon_len=target_horizon_len,
+            highs=highs,
+            lows=lows,
+            closes=closes,
+            fees_percentage=fees,
+            position_size=1.0,
+            leverage=1.0
+        )
 
-env = TradingEnvironment(env_config={
-    'states': inputs,
-    'reward_fn': train_reward_fn,
-    'episode_steps': episode_steps,
-    'metrics': None
-})
+        # 2. Check environment compatibility with Stable-Baselines3
+        env = build_trading_environment(
+            states=states,
+            reward_fn=reward_fn,
+            episode_steps=episode_steps,
+            n_consecutive_window=3
+        )
+        check_env(env, warn=True)
 
-# Validate environment compatibility with Stable Baselines 3
-check_env(env, warn=True)
-print("Environment passed SB3 compatibility check!")
+        # 3. Lifecycle rollout on fresh env
+        rollout_env = build_trading_environment(
+            states=states,
+            reward_fn=reward_fn,
+            episode_steps=episode_steps,
+            n_consecutive_window=3
+        )
+
+        obs, info = rollout_env.reset()
+        assert obs.shape == (timeframe_len, num_features), f"Unexpected obs shape: {obs.shape}"
+
+        # Rollout 2 episodes
+        for episode in range(2):
+            done = False
+            step_count = 0
+            while not done:
+                action = step_count % len(Action)
+                next_obs, reward, terminated, truncated, step_info = rollout_env.step(action)
+                assert isinstance(reward, float), f"Reward must be float, got {type(reward)}"
+                assert isinstance(terminated, bool), f"Terminated must be bool, got {type(terminated)}"
+                assert isinstance(truncated, bool), f"Truncated must be bool, got {type(truncated)}"
+                assert 'action' in step_info, "Info missing 'action'"
+                assert 'log_pnl' in step_info, "Info missing 'log_pnl'"
+                step_count += 1
+                done = terminated or truncated
+
+            assert step_count == episode_steps, f"Episode length {step_count} != episode_steps {episode_steps}"
+            obs, info = rollout_env.reset()
+
+        metrics = rollout_env.get_metrics()
+        assert isinstance(metrics, tuple), f"get_metrics must return tuple, got {type(metrics)}"
+        assert len(metrics) == 5, f"Expected 5 metrics, got {len(metrics)}"
+        for metric in metrics:
+            assert len(metric.episode_metrics) == 2, f"Metric {metric.name} expected 2 episode metrics, got {len(metric.episode_metrics)}"
+
+        print("Environment passed SB3 compatibility and lifecycle checks!")
+    except Exception as e:
+        print(f"Validation failed: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

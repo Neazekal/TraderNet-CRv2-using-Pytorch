@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 import pandas as pd
 from functools import reduce
@@ -57,17 +58,14 @@ class DatasetBuilder:
     def build_dataset(
             self,
             ohlcv_history_filepath: str,
-            gtrends_history_filepath: str or None,
             dataset_save_filepath: str,
-            ta_config: TAConfig = StandardTAConfig,
-            impute_missing_gtrends: bool = True,
-            gtrends_imputing_percentage_threshold: float = 0.1
+            ta_config: Optional[TAConfig] = None,
     ):
+        if ta_config is None:
+            ta_config = StandardTAConfig()
         ohlcv_df = self._import_ohlcv_dataset(ohlcv_history_filepath=ohlcv_history_filepath)
         ta_df = self._compute_technical_indicators(ohlcv_df=ohlcv_df, ta_config=ta_config)
-        
-        # Gtrends is removed as it is not supported by the new downloader
-        
+
         num_expected_samples = ohlcv_df.shape[0]
         merged_dataset_df = self._merge_datasets(dataset_df_list=[ohlcv_df, ta_df])
 
@@ -77,4 +75,3 @@ class DatasetBuilder:
 
         dataset_df = self._handle_missing_values(dataset_df=merged_dataset_df)
         dataset_df.to_csv(dataset_save_filepath, index=False)
-

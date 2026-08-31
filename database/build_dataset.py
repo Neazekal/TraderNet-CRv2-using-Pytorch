@@ -1,7 +1,5 @@
 import os
-import glob
 import argparse
-import pandas as pd
 from pathlib import Path
 import sys
 
@@ -11,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from database.datasets.builder import DatasetBuilder
 from analysis.technical.configs.standard import StandardTAConfig
+
 
 def main():
     parser = argparse.ArgumentParser(description="Build datasets from downloaded Binance data")
@@ -44,26 +43,25 @@ def main():
         if len(parts) < 2:
             print(f"Skipping {filename}: cannot parse symbol")
             continue
-        
+
         symbol = parts[0]
         print(f"Processing {symbol} from {filename}...")
 
         # Construct output path
         output_path = config.dataset_save_filepath.format(symbol)
-        
+
         try:
             builder.build_dataset(
                 ohlcv_history_filepath=str(csv_file),
-                gtrends_history_filepath=None, # No gtrends
                 dataset_save_filepath=output_path,
                 ta_config=ta_config,
-                impute_missing_gtrends=False
             )
             print(f"Successfully built dataset for {symbol} at {output_path}")
         except Exception as e:
             print(f"Failed to build dataset for {symbol}: {e}")
             import traceback
             traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()

@@ -5,7 +5,7 @@
 This repository is an extended and modernized PyTorch implementation of the original TraderNet-CR architecture, featuring:
 - **Agents**: PPO (Proximal Policy Optimization) and DQN (Deep Q-Network).
 - **Safety Mechanisms**: N-Consecutive trend monitoring and Smurfing (optional) to mitigate risk.
-- **Environment**: Custom Trading Environment compatible with OpenAI Gym / Gymnasium APIs.
+- **Environment**: Custom Trading Environment compatible with OpenAI Gym / Gymnasium and Stable-Baselines3 APIs.
 
 ## Features
 
@@ -17,7 +17,7 @@ This repository is an extended and modernized PyTorch implementation of the orig
 ## Installation
 
 ### Prerequisites
-*   Python 3.8 or higher
+*   Python >= 3.10
 *   pip
 
 ### Installation Steps
@@ -32,6 +32,10 @@ This repository is an extended and modernized PyTorch implementation of the orig
     It is recommended to use a virtual environment (conda or venv).
     ```bash
     pip install -r requirements.txt
+    ```
+    For development and testing:
+    ```bash
+    pip install -r requirements-dev.txt
     ```
 
 ## Usage Settings
@@ -60,40 +64,67 @@ python database/build_dataset.py --data_dir data
 ```
 Processed datasets are saved to `database/storage/datasets/`.
 
-### 3. Train Agents
-Train the RL agents (PPO/DQN) on the processed datasets.
+### 3. Validate Environment
+Verify Gymnasium and Stable-Baselines3 environment compatibility and lifecycle behavior:
 
+```bash
+python validate_environment.py
+```
+
+### 4. Train Agents
+Train RL agents on the processed datasets.
+
+Standard TraderNet:
 ```bash
 python train.py
 ```
+
+Smurf-wrapped TraderNet:
+```bash
+python train_smurf.py
+```
+
 *   Checkpoints are saved to: `database/storage/checkpoints/`
 *   Training logs (TensorBoard) are included in the checkpoint directories.
-*   Results (Evaluation metrics) are saved to `experiments/tradernet/`.
+*   Results (Evaluation metrics) are saved to `experiments/tradernet/` or `experiments/smurf/`.
 
-### 4. Evaluate Agents
+### 5. Evaluate Agents
 Evaluate trained agents on unseen data or specific test sets.
 
+Standard evaluation:
 ```bash
 python eval.py
 ```
-metrics and PnL (Profit and Loss) curves will be saved to `experiments/tradernet/`.
+
+Integrated / Hybrid evaluation (TraderNet + Smurf):
+```bash
+python integrated.py
+```
+
+Metrics and PnL (Profit and Loss) curves will be saved to `experiments/tradernet/` and `experiments/integrated/`.
+
+### 6. Run Tests
+Run automated unit and integration tests:
+
+```bash
+pytest
+```
 
 ## Project Structure
 
 *   `agents/`: Implementation of RL agents (PPO, DQN).
-*   `environments/`: Custom trading environments and reward functions.
-*   `database/`: Scripts for data management and dataset building.
+*   `environments/`: Custom trading environments, factory, and reward functions.
+*   `database/`: Scripts for data management, preprocessing, and dataset utilities.
 *   `metrics/`: Performance metrics calculations (Sharpe, Sortino, Drawdown, etc.).
 *   `rules/`: Safety rules like N-Consecutive.
+*   `tests/`: Unit and integration tests.
 *   `config.py`: Global configuration file.
-*   `train.py`: Main training script.
-*   `eval.py`: Main evaluation script.
+*   `train.py`: Main training script for standard TraderNet.
+*   `train_smurf.py`: Training script for Smurf reward wrapper.
+*   `eval.py`: Evaluation script for standalone models.
+*   `integrated.py`: Evaluation script for hybrid / integrated models.
+*   `validate_environment.py`: Synthetic SB3/lifecycle environment validator.
 *   `download_olhcv.py`: Data downloader.
-
-## Citation
-
-If you use this work in your research, please refer to the original paper:
-*Link to be added*
 
 ## Disclaimer
 

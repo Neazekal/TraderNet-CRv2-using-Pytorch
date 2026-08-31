@@ -8,3 +8,7 @@ scikit-learn
 seaborn
 tqdm
 rich
+python-binance
+python-dotenv
+ta
+matplotlib

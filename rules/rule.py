@@ -6,3 +6,6 @@ class Rule(ABC):
     @abstractmethod
     def filter(self, action: int) -> int:
         pass
+
+    def reset(self) -> None:
+        pass
