@@ -4,23 +4,26 @@ from metrics.metric import Metric
 class MaximumDrawdown(Metric):
     def __init__(self):
         super().__init__(name='Maximum Drawdown')
-        self._log_pnl_sum = 0
-        self._log_pnl_sum_peak = 0
-        self._hourly_mdds = []
+        self._wealth = 1.0
+        self._peak = 1.0
+        self._max_drawdown = 0.0
 
     def reset(self):
-        self._log_pnl_sum = 0
-        self._log_pnl_sum_peak = 0
-        self._hourly_mdds = []
+        self._wealth = 1.0
+        self._peak = 1.0
+        self._max_drawdown = 0.0
 
-    def update(self, log_pnl: float):
-        self._log_pnl_sum += log_pnl
-
-        if self._log_pnl_sum_peak < self._log_pnl_sum:
-            self._log_pnl_sum_peak = self._log_pnl_sum
-
-        self._hourly_mdds.append(1 if self._log_pnl_sum_peak == 0 else self._log_pnl_sum/self._log_pnl_sum_peak)
+    def update(self, step_return: float):
+        self._wealth *= (1.0 + step_return)
+        if self._wealth <= 0.0:
+            self._max_drawdown = 1.0
+            self._wealth = 0.0
+        else:
+            if self._wealth > self._peak:
+                self._peak = self._wealth
+            dd = (self._peak - self._wealth) / self._peak
+            if dd > self._max_drawdown:
+                self._max_drawdown = dd
 
     def result(self) -> float:
-        log_mdd = min(self._hourly_mdds)
-        return 1 - log_mdd
+        return float(self._max_drawdown)

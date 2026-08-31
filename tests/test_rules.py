@@ -19,6 +19,15 @@ def test_nconsecutive_n3_same_action():
     assert rule.filter(Action.BUY.value) == Action.BUY.value
 
 
+def test_nconsecutive_flat_action():
+    rule = NConsecutive(window_size=3)
+
+    assert rule.filter(Action.FLAT.value) == Action.HOLD.value
+    assert rule.filter(Action.FLAT.value) == Action.HOLD.value
+    assert rule.filter(Action.FLAT.value) == Action.FLAT.value
+    assert rule.filter(Action.FLAT.value) == Action.FLAT.value
+
+
 def test_nconsecutive_mixed_sequence():
     rule = NConsecutive(window_size=3)
 

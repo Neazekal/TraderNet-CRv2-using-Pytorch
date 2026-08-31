@@ -5,20 +5,20 @@ from metrics.metric import Metric
 class SharpeRatio(Metric):
     def __init__(self):
         super().__init__(name='Sharpe')
-        self._episode_log_pnls = []
+        self._returns = []
 
     def reset(self):
-        self._episode_log_pnls = []
+        self._returns = []
 
-    def update(self, log_pnl: float):
-        self._episode_log_pnls.append(log_pnl)
+    def update(self, step_return: float):
+        self._returns.append(float(step_return))
 
     def result(self) -> float:
-        episode_log_returns = np.float64(self._episode_log_pnls)
-        if len(episode_log_returns) < 2:
+        if len(self._returns) < 2:
             return 0.0
-        average_returns = episode_log_returns.mean()
-        std_returns = episode_log_returns.std(ddof=1)
-        if std_returns == 0:
+        arr = np.asarray(self._returns, dtype=np.float64)
+        std_val = float(np.std(arr, ddof=1))
+        if std_val == 0.0 or not np.isfinite(std_val):
             return 0.0
-        return np.exp(average_returns/std_returns)
+        mean_val = float(np.mean(arr))
+        return float(mean_val / std_val)

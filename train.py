@@ -14,52 +14,53 @@ from environments.factory import build_trading_environment
 
 
 def train(
-        dataset_filepath,
-        timeframe_size,
-        target_horizon_len,
-        num_eval_samples,
-        fees,
-        reward_fn_instance,
-        agent_class,
-        checkpoint_filepath,
-        train_episode_steps,
-        train_iterations,
-        eval_episodes,
-        position_size=1.0,
-        leverage=1.0,
-        n_consecutive_window=3,
-        reward_wrapper=None,
-        **kwargs
+    dataset_filepath: str,
+    timeframe_size: int,
+    num_eval_samples: int,
+    initial_equity: float,
+    fee_rate: float,
+    slippage_rate: float,
+    position_size: float,
+    leverage: float,
+    agent_class,
+    checkpoint_filepath: str,
+    train_episode_steps: int,
+    train_iterations: int,
+    eval_episodes: int,
+    n_consecutive_window: int | None = 3,
+    **kwargs
 ):
-    x_train, train_reward_fn, x_eval, eval_reward_fn = prepare_train_eval_dataset(
+    train_data, eval_data = prepare_train_eval_dataset(
         dataset_path=config.dataset_save_filepath.format(dataset_filepath),
         feature_columns=config.regression_features,
         timeframe_size=timeframe_size,
-        target_horizon_len=target_horizon_len,
         num_eval_samples=num_eval_samples,
-        fees=fees,
-        reward_fn_factory=reward_fn_instance,
-        position_size=position_size,
-        leverage=leverage,
-        reward_wrapper=reward_wrapper
     )
 
     # Create training environment wrapped with Monitor and DummyVecEnv for SB3
     def make_train_env():
         env = build_trading_environment(
-            states=x_train,
-            reward_fn=train_reward_fn,
+            market_data=train_data,
             episode_steps=train_episode_steps,
-            n_consecutive_window=n_consecutive_window
+            initial_equity=initial_equity,
+            fee_rate=fee_rate,
+            slippage_rate=slippage_rate,
+            position_size=position_size,
+            leverage=leverage,
+            n_consecutive_window=n_consecutive_window,
         )
         return Monitor(env)
 
     def make_eval_env():
         env = build_trading_environment(
-            states=x_eval,
-            reward_fn=eval_reward_fn,
-            episode_steps=x_eval.shape[0] - 1,
-            n_consecutive_window=n_consecutive_window
+            market_data=eval_data,
+            episode_steps=len(eval_data.execution_opens),
+            initial_equity=initial_equity,
+            fee_rate=fee_rate,
+            slippage_rate=slippage_rate,
+            position_size=position_size,
+            leverage=leverage,
+            n_consecutive_window=n_consecutive_window,
         )
         return Monitor(env)
 
@@ -78,7 +79,7 @@ def train(
     agent.train(total_timesteps=train_iterations, progress_bar=True)
 
     # Save the model
-    agent.save(checkpoint_filepath + 'model')
+    agent.save(os.path.join(checkpoint_filepath, "model"))
 
     # Evaluate the agent
     mean_reward, std_reward = evaluate_policy(
@@ -92,7 +93,8 @@ def train(
     return [mean_reward], eval_metrics
 
 
-def run_experiments(experiment_name: str, reward_wrapper=None):
+def run_experiments(experiment_name: str):
+    scenario_name = "Portfolio-Simulator"
     results = {
         agent_name: {dataset_name: {} for dataset_name in config.datasets_dict.keys()}
         for agent_name in config.agent_config.keys()
@@ -102,43 +104,50 @@ def run_experiments(experiment_name: str, reward_wrapper=None):
 
     for agent_name, agent_params in config.agent_config.items():
         for dataset_name, dataset_filepath in config.datasets_dict.items():
-            for reward_fn_name, reward_fn_instance in config.reward_config.items():
-                print(f"Training {experiment_name} {agent_name} on {dataset_name} with {reward_fn_name}...")
-                torch.manual_seed(0)
-                np.random.seed(0)
+            print(f"Training {experiment_name} {agent_name} on {dataset_name} with {scenario_name}...")
+            torch.manual_seed(0)
+            np.random.seed(0)
 
-                checkpoint_filepath = f'database/storage/checkpoints/experiments/{experiment_name}/{agent_name}/{dataset_name}/{reward_fn_name}/'
-                os.makedirs(checkpoint_filepath, exist_ok=True)
+            checkpoint_filepath = (
+                f'database/storage/checkpoints/experiments/{experiment_name}/{agent_name}/{dataset_name}/{scenario_name}/'
+            )
+            os.makedirs(checkpoint_filepath, exist_ok=True)
 
-                train_params = {
-                    'dataset_filepath': dataset_filepath,
-                    'reward_fn_instance': reward_fn_instance,
-                    'checkpoint_filepath': checkpoint_filepath,
-                    'reward_wrapper': reward_wrapper,
-                    **config.env_config,
-                    **agent_params
-                }
+            train_params = {
+                'dataset_filepath': dataset_filepath,
+                'checkpoint_filepath': checkpoint_filepath,
+                **config.env_config,
+                **agent_params,
+            }
 
-                eval_avg_returns, eval_metrics = train(**train_params)
+            eval_avg_returns, eval_metrics = train(**train_params)
+            results[agent_name][dataset_name][scenario_name] = (eval_avg_returns, eval_metrics)
 
-                results[agent_name][dataset_name][reward_fn_name] = (eval_avg_returns, eval_metrics)
-
-            for reward_fn_name, reward_fn_results in results[agent_name][dataset_name].items():
-                eval_avg_returns, eval_metrics = reward_fn_results
-
-                metrics_dict = {
-                    'steps': [10000 * i for i in range(len(eval_avg_returns))],
-                    'average_returns': eval_avg_returns,
-                    **{
-                        metric.name: [float(np.mean(metric.episode_metrics))] if len(metric.episode_metrics) > 0 else [0.0]
-                        for metric in eval_metrics
-                    }
-                }
-                metrics_df = pd.DataFrame(metrics_dict)
-                output_csv_path = f'experiments/{experiment_name}/{agent_name}/{dataset_name}_{reward_fn_name}.csv'
-                os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
-                metrics_df.to_csv(output_csv_path, index=False)
-                print(f"Saved results to {output_csv_path}")
+            metric_values = {
+                metric.name: [float(np.mean(metric.episode_metrics))] if len(metric.episode_metrics) > 0 else [0.0]
+                for metric in eval_metrics
+            }
+            cumulative_return_values = next(
+                (metric.episode_metrics for metric in eval_metrics if metric.name == 'Cumulative Return'),
+                [],
+            )
+            mean_cumulative_return = (
+                float(np.mean(cumulative_return_values))
+                if len(cumulative_return_values) > 0
+                else 0.0
+            )
+            metrics_dict = {
+                'steps': [10000 * i for i in range(len(eval_avg_returns))],
+                'average_returns': eval_avg_returns,
+                'final_equity': [float(train_params['initial_equity'] * (1.0 + mean_cumulative_return))],
+                'cumulative_return': [mean_cumulative_return],
+                **metric_values,
+            }
+            metrics_df = pd.DataFrame(metrics_dict)
+            output_csv_path = f'experiments/{experiment_name}/{agent_name}/{dataset_name}_{scenario_name}.csv'
+            os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
+            metrics_df.to_csv(output_csv_path, index=False)
+            print(f"Saved results to {output_csv_path}")
 
 
 if __name__ == "__main__":

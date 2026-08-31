@@ -19,7 +19,7 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def update(self, log_pnl: float):
+    def update(self, step_return: float):
         pass
 
     @abstractmethod
@@ -27,4 +27,4 @@ class Metric(ABC):
         pass
 
     def register(self):
-        self._episode_metrics.append(self.result())
+        self._episode_metrics.append(float(self.result()))

@@ -1,24 +1,24 @@
 from metrics.metric import Metric
 
 
-class InvestmentRisk(Metric):
+class LossRate(Metric):
     def __init__(self):
-        super().__init__(name='Investment Risk')
-        self._sum_good_transactions = 0
-        self._sum_bad_transactions = 0
+        super().__init__(name='Loss Rate')
+        self._neg_count = 0
+        self._nonzero_count = 0
 
     def reset(self):
-        self._sum_good_transactions = 0
-        self._sum_bad_transactions = 0
+        self._neg_count = 0
+        self._nonzero_count = 0
 
-    def update(self, log_pnl: float):
-        if log_pnl > 0:
-            self._sum_good_transactions += 1
-        elif log_pnl < 0:
-            self._sum_bad_transactions += 1
-        else:
-            return
+    def update(self, step_return: float):
+        if step_return < 0:
+            self._neg_count += 1
+            self._nonzero_count += 1
+        elif step_return > 0:
+            self._nonzero_count += 1
 
     def result(self) -> float:
-        total_investments = (self._sum_bad_transactions + self._sum_good_transactions)
-        return 0 if total_investments == 0 else self._sum_bad_transactions/total_investments
+        if self._nonzero_count == 0:
+            return 0.0
+        return float(self._neg_count / self._nonzero_count)

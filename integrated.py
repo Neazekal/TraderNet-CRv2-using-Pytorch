@@ -13,8 +13,7 @@ from eval import build_eval_env, load_agent
 def eval_tradernet_smurf(tradernet_agent, smurf_agent, env):
     obs = env.reset()
     cumulative_rewards = 0.0
-    cumulative_pnls = 0.0
-    pnls = []
+    step_records = []
 
     while True:
         # 1. Ask Smurf Agent ("Should I HOLD?")
@@ -25,7 +24,7 @@ def eval_tradernet_smurf(tradernet_agent, smurf_agent, env):
         if smurf_action_val == Action.HOLD.value:
             final_action = smurf_action
         else:
-            # If Smurf says "Not HOLD" (Buy/Sell), ask TraderNet for the specific trade action
+            # If Smurf says "Not HOLD", ask TraderNet for the specific trade action
             tradernet_action, _ = tradernet_agent.predict(obs, deterministic=True)
             final_action = tradernet_action
 
@@ -33,19 +32,18 @@ def eval_tradernet_smurf(tradernet_agent, smurf_agent, env):
         obs, reward, done, info = env.step(final_action)
 
         reward_val = float(reward[0])
-        log_pnl = float(info[0]['log_pnl'])
-
         cumulative_rewards += reward_val
-        cumulative_pnls += log_pnl
-        pnls.append(cumulative_pnls)
+        step_records.append(info[0])
 
         if done[0]:
             break
 
-    return cumulative_rewards, pnls
+    return cumulative_rewards, step_records
 
 
 if __name__ == "__main__":
+    scenario_name = "Portfolio-Simulator"
+
     agent_pairs = [
         {
             'name': 'PPO_TraderNet_DDQN_Smurf',
@@ -59,56 +57,63 @@ if __name__ == "__main__":
         smurf_conf = pair['smurf']
 
         for dataset_name, dataset_filepath in config.datasets_dict.items():
-            for reward_fn_name, reward_fn_instance in config.reward_config.items():
-                print(f"Evaluating Integrated {pair['name']} on {dataset_name} with {reward_fn_name}...")
+            print(f"Evaluating Integrated {pair['name']} on {dataset_name} with {scenario_name}...")
 
-                env = build_eval_env(
-                    dataset_filepath=dataset_filepath,
-                    reward_fn_instance=reward_fn_instance,
-                    **config.env_config
-                )
+            env = build_eval_env(
+                dataset_filepath=dataset_filepath,
+                **config.env_config
+            )
 
-                tradernet_path = f'database/storage/checkpoints/experiments/tradernet/{tradernet_conf["name"]}/{dataset_name}/{reward_fn_name}/'
-                tradernet_agent = load_agent(tradernet_conf['class'], tradernet_path, env)
+            tradernet_path = (
+                f'database/storage/checkpoints/experiments/tradernet/{tradernet_conf["name"]}/{dataset_name}/{scenario_name}/'
+            )
+            tradernet_agent = load_agent(tradernet_conf['class'], tradernet_path, env)
 
-                smurf_path = f'database/storage/checkpoints/experiments/smurf/{smurf_conf["name"]}/{dataset_name}/{reward_fn_name}/'
-                smurf_agent = load_agent(smurf_conf['class'], smurf_path, env)
+            smurf_path = (
+                f'database/storage/checkpoints/experiments/smurf/{smurf_conf["name"]}/{dataset_name}/{scenario_name}/'
+            )
+            smurf_agent = load_agent(smurf_conf['class'], smurf_path, env)
 
-                if tradernet_agent is None or smurf_agent is None:
-                    print(f"Skipping {pair['name']} due to missing models.")
-                    if tradernet_agent is None:
-                        print(f"Missing TraderNet at {tradernet_path}")
-                    if smurf_agent is None:
-                        print(f"Missing Smurf at {smurf_path}")
-                    continue
+            if tradernet_agent is None or smurf_agent is None:
+                print(f"Skipping {pair['name']} due to missing/incompatible models.")
+                if tradernet_agent is None:
+                    print(f"Missing/incompatible TraderNet model at {tradernet_path}")
+                if smurf_agent is None:
+                    print(f"Missing/incompatible Smurf model at {smurf_path}")
+                continue
 
-                average_returns, pnls = eval_tradernet_smurf(
-                    tradernet_agent=tradernet_agent.model,
-                    smurf_agent=smurf_agent.model,
-                    env=env
-                )
+            average_returns, step_records = eval_tradernet_smurf(
+                tradernet_agent=tradernet_agent.model,
+                smurf_agent=smurf_agent.model,
+                env=env
+            )
 
-                base_env = env.envs[0].unwrapped
-                episode_metrics = base_env.get_metrics()
+            base_env = env.envs[0].unwrapped
+            episode_metrics = base_env.get_metrics()
 
-                metrics = {
-                    'average_returns': [average_returns],
-                    **{
-                        metric.name: [float(np.mean(metric.episode_metrics))] if len(metric.episode_metrics) > 0 else [float(metric.result())]
-                        for metric in episode_metrics
-                    }
+            final_equity = step_records[-1]['equity'] if step_records else config.env_config['initial_equity']
+            cumulative_return = step_records[-1]['cumulative_return'] if step_records else 0.0
+
+            metrics = {
+                'average_returns': [average_returns],
+                'final_equity': [final_equity],
+                'cumulative_return': [cumulative_return],
+                **{
+                    metric.name: [float(np.mean(metric.episode_metrics))] if len(metric.episode_metrics) > 0 else [float(metric.result())]
+                    for metric in episode_metrics
                 }
-                results_df = pd.DataFrame(metrics)
+            }
+            results_df = pd.DataFrame(metrics)
 
-                output_dir = f'experiments/integrated/{tradernet_conf["name"]}'
-                output_metrics_path = f'{output_dir}/{dataset_name}_{reward_fn_name}_metrics.csv'
-                os.makedirs(os.path.dirname(output_metrics_path), exist_ok=True)
-                results_df.to_csv(output_metrics_path, index=False)
+            output_dir = f'experiments/integrated/{tradernet_conf["name"]}'
+            output_metrics_path = f'{output_dir}/{dataset_name}_{scenario_name}_metrics.csv'
+            os.makedirs(os.path.dirname(output_metrics_path), exist_ok=True)
+            results_df.to_csv(output_metrics_path, index=False)
 
-                print(results_df, '\n')
+            print(results_df, '\n')
 
-                episode_pnls_df = pd.DataFrame(pnls, columns=['cumulative_pnl'])
-                output_pnls_path = f'{output_dir}/{dataset_name}_{reward_fn_name}_eval_cumul_pnls.csv'
-                episode_pnls_df.to_csv(output_pnls_path, index=False)
+            episode_pnls_df = pd.DataFrame(step_records)
+            output_pnls_path = f'{output_dir}/{dataset_name}_{scenario_name}_eval_cumul_pnls.csv'
+            episode_pnls_df.to_csv(output_pnls_path, index=False)
 
-                print(episode_pnls_df.tail(5))
+            print(episode_pnls_df[['step_index', 'position', 'equity', 'cumulative_pnl', 'cumulative_return']].tail(5))

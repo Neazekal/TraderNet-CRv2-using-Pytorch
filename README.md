@@ -4,15 +4,30 @@
 
 This repository is an extended and modernized PyTorch implementation of the original TraderNet-CR architecture, featuring:
 - **Agents**: PPO (Proximal Policy Optimization) and DQN (Deep Q-Network).
-- **Safety Mechanisms**: N-Consecutive trend monitoring and Smurfing (optional) to mitigate risk.
-- **Environment**: Custom Trading Environment compatible with OpenAI Gym / Gymnasium and Stable-Baselines3 APIs.
+- **Environment**: Gymnasium and Stable-Baselines3 compatible `TradingEnvironment` powered by a realistic single-asset `PortfolioSimulator`.
+- **Safety Mechanisms**: N-Consecutive trend monitoring and Smurf gating mechanism.
+- **Metrics**: Standardized arithmetic financial metrics (Cumulative Return, Loss Rate, Sharpe Ratio, Sortino Ratio, Maximum Drawdown).
 
-## Features
+## Phase 2: Realistic Portfolio Simulator & Causal Alignment
 
-*   **Deep Reinforcement Learning**: Train agents using state-of-the-art RL algorithms (PPO, DQN).
-*   **Technical Analysis**: Integration of popular indicators (MACD, RSI, Bollinger Bands, etc.) as state features.
-*   **Rule-Based Overlays**: Hybrid approach combining RL with "N-Consecutive" trend rules for safer entry/exit.
-*   **Flexible Configuration**: Centralized configuration for agents, environments, and datasets.
+In Phase 2, the legacy heuristic reward matrix was replaced with a causal, single-asset portfolio simulator:
+*   **Causal Next-Open Execution**: Decisions made from the observation window ending at bar $t$ are executed at the opening price of bar $t+1$ (`execution_open`) and marked to market at the closing price of bar $t+1$ (`mark_close`). No future prices (high/low/max/min) are leaked into fills or rewards.
+*   **4 Discrete Actions**:
+    *   `BUY` (0): Target position $+1.0$ (Long).
+    *   `SELL` (1): Target position $-1.0$ (Short).
+    *   `HOLD` (2): Retain current position (no turnover or rebalancing).
+    *   `FLAT` (3): Target position $0.0$ (Close to Cash).
+*   **Realistic Cost Modeling**:
+    *   Adverse slippage: $\text{fill\_price} = p \cdot (1 + \text{slippage\_rate} \cdot \text{sign}(\Delta \text{units}))$.
+    *   Transaction fees: $\text{fee} = \text{fee\_rate} \cdot |\Delta \text{units}| \cdot \text{fill\_price}$.
+    *   Position reversal (Long $\leftrightarrow$ Short) incurs two fills (closing old position, opening new position) with two fees and slippages.
+    *   Terminal liquidation: Open positions are liquidated at current mark close upon episode end or data end.
+*   **Observation Space**: Flattened state window + portfolio state vector: $\text{Box}(W \times F + 2)$ of dtype `float32`, containing the technical feature matrix, current position sign, and relative return.
+*   **Retrain Requirement**: Due to action space change (`Discrete(4)`) and observation space expansion (`Box(W*F+2,)`), models trained on Phase 1 are incompatible and must be retrained.
+*   **Phase 2 Scope & Assumptions**:
+    *   Single-asset Long/Short execution with fixed units between rebalances.
+    *   No maintenance margin or intrabar liquidation.
+    *   No funding rate mechanics or order book volume impact.
 
 ## Installation
 
@@ -42,7 +57,7 @@ This repository is an extended and modernized PyTorch implementation of the orig
 
 All major configurations (agent hyperparameters, training settings, supported coins) are managed in **`config.py`**. Modify this file to change:
 *   `datasets_dict`: The list of cryptocurrencies to train/evaluate on.
-*   `env_config`: Environment parameters like fees, leverage, and timeframe.
+*   `env_config`: Environment parameters like `initial_equity`, `fee_rate`, `slippage_rate`, `position_size`, `leverage`, and `timeframe_size`.
 *   `agent_config`: Hyperparameters for PPO and DQN agents.
 
 ## Workflow
@@ -65,31 +80,31 @@ python database/build_dataset.py --data_dir data
 Processed datasets are saved to `database/storage/datasets/`.
 
 ### 3. Validate Environment
-Verify Gymnasium and Stable-Baselines3 environment compatibility and lifecycle behavior:
+Verify Gymnasium and Stable-Baselines3 environment compatibility and portfolio lifecycle behavior:
 
 ```bash
 python validate_environment.py
 ```
 
 ### 4. Train Agents
-Train RL agents on the processed datasets.
+Train RL agents on the processed datasets using the `Portfolio-Simulator` scenario.
 
 Standard TraderNet:
 ```bash
 python train.py
 ```
 
-Smurf-wrapped TraderNet:
+Smurf-wrapped TraderNet (Phase 2 canonical setup):
 ```bash
 python train_smurf.py
 ```
 
-*   Checkpoints are saved to: `database/storage/checkpoints/`
+*   Checkpoints are saved to: `database/storage/checkpoints/experiments/{tradernet,smurf}/{agent}/{dataset}/Portfolio-Simulator/`
 *   Training logs (TensorBoard) are included in the checkpoint directories.
-*   Results (Evaluation metrics) are saved to `experiments/tradernet/` or `experiments/smurf/`.
+*   Results (Evaluation metrics) are saved to `experiments/{tradernet,smurf}/{agent}/{dataset}_Portfolio-Simulator.csv`.
 
 ### 5. Evaluate Agents
-Evaluate trained agents on unseen data or specific test sets.
+Evaluate trained agents on unseen data.
 
 Standard evaluation:
 ```bash
@@ -101,7 +116,7 @@ Integrated / Hybrid evaluation (TraderNet + Smurf):
 python integrated.py
 ```
 
-Metrics and PnL (Profit and Loss) curves will be saved to `experiments/tradernet/` and `experiments/integrated/`.
+Metrics and PnL curves will be saved to `experiments/tradernet/` and `experiments/integrated/`.
 
 ### 6. Run Tests
 Run automated unit and integration tests:
@@ -113,14 +128,14 @@ pytest
 ## Project Structure
 
 *   `agents/`: Implementation of RL agents (PPO, DQN).
-*   `environments/`: Custom trading environments, factory, and reward functions.
+*   `environments/`: Custom trading environment, portfolio simulator, and environment factory.
 *   `database/`: Scripts for data management, preprocessing, and dataset utilities.
-*   `metrics/`: Performance metrics calculations (Sharpe, Sortino, Drawdown, etc.).
+*   `metrics/`: Performance metrics calculations (Cumulative Return, Loss Rate, Sharpe, Sortino, Drawdown).
 *   `rules/`: Safety rules like N-Consecutive.
 *   `tests/`: Unit and integration tests.
 *   `config.py`: Global configuration file.
-*   `train.py`: Main training script for standard TraderNet.
-*   `train_smurf.py`: Training script for Smurf reward wrapper.
+*   `train.py`: Main training script for standard TraderNet under Portfolio-Simulator scenario.
+*   `train_smurf.py`: Training script for Smurf scenario.
 *   `eval.py`: Evaluation script for standalone models.
 *   `integrated.py`: Evaluation script for hybrid / integrated models.
 *   `validate_environment.py`: Synthetic SB3/lifecycle environment validator.

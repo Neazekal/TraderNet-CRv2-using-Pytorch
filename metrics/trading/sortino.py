@@ -5,23 +5,21 @@ from metrics.metric import Metric
 class SortinoRatio(Metric):
     def __init__(self):
         super().__init__(name='Sortino')
-        self._episode_log_pnls = []
+        self._returns = []
 
     def reset(self):
-        self._episode_log_pnls = []
+        self._returns = []
 
-    def update(self, log_pnl: float):
-        self._episode_log_pnls.append(log_pnl)
+    def update(self, step_return: float):
+        self._returns.append(float(step_return))
 
     def result(self) -> float:
-        episode_log_returns = np.float64(self._episode_log_pnls)
-        if len(episode_log_returns) < 2:
+        if len(self._returns) < 2:
             return 0.0
-        average_returns = episode_log_returns.mean()
-        downfall_returns = episode_log_returns[episode_log_returns < 0]
-        if len(downfall_returns) < 2:
+        arr = np.asarray(self._returns, dtype=np.float64)
+        downside = np.minimum(arr, 0.0)
+        downside_rms = float(np.sqrt(np.mean(downside ** 2)))
+        if downside_rms == 0.0 or not np.isfinite(downside_rms):
             return 0.0
-        std_downfall_returns = downfall_returns.std(ddof=1)
-        if std_downfall_returns == 0:
-            return 0.0
-        return np.exp(average_returns/std_downfall_returns)
+        mean_val = float(np.mean(arr))
+        return float(mean_val / downside_rms)

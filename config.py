@@ -19,8 +19,6 @@ checkpoint_dir = 'database/storage/checkpoints/'
 import torch
 from agents.torch.ppo_agent import PPOAgent
 from agents.torch.dqn_agent import DQNAgent
-from environments.rewards.marketlimitorder import MarketLimitOrderRF
-from environments.rewards.marketorder import MarketOrderRF
 
 # Datasets to train on
 datasets_dict = {'DOGEUSDT': 'DOGEUSDT'}
@@ -28,13 +26,14 @@ datasets_dict = {'DOGEUSDT': 'DOGEUSDT'}
 # Environment parameters
 env_config = {
     'timeframe_size': 12,
-    'target_horizon_len': 20,
     'num_eval_samples': 2250,
-    'fees': 0.007,
-    'train_episode_steps': 100, # Steps per episode during training
-    'eval_episodes': 1,         # Number of episodes to evaluate
+    'initial_equity': 10000.0,
+    'fee_rate': 0.007,
+    'slippage_rate': 0.0005,
     'position_size': 1.0,       # Percentage of capital per trade (0.0 to 1.0)
     'leverage': 1.0,            # Leverage multiplier (e.g., 1.0, 5.0, 10.0)
+    'train_episode_steps': 100, # Steps per episode during training
+    'eval_episodes': 1,         # Number of episodes to evaluate
     'n_consecutive_window': 3
 }
 
@@ -54,10 +53,4 @@ agent_config = {
         'train_iterations': 100000,
         'device': 'cpu'
     }
-}
-
-# Reward functions
-reward_config = {
-    'Market-Limit Orders': MarketLimitOrderRF,
-    # 'Market-Orders': MarketOrderRF # Uncomment to enable
 }

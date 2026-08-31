@@ -1,4 +1,3 @@
-import numpy as np
 from environments.actions import Action
 from rules.rule import Rule
 
