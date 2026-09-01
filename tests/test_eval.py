@@ -6,6 +6,7 @@ from database.datasets.utils import MarketData
 from environments.actions import Action
 from environments.factory import build_trading_environment
 from eval import eval_tradernet, eval_buy_and_hold
+from evaluation import EpisodeResult, run_episode
 
 
 class ConstantAgent:
@@ -231,3 +232,45 @@ def test_eval_buy_and_hold_rule_isolation():
     # Step 2: passes NConsecutive(3) filter -> BUY
     assert rule_records[2]['effective_action'] == Action.BUY.value
     assert rule_records[2]['position'] == 1.0
+
+
+def test_trading_environment_market_window_shape():
+    mdata = _create_eval_market_data(num_states=11)
+    env = build_trading_environment(
+        market_data=mdata,
+        episode_steps=5,
+        n_consecutive_window=None,
+    )
+    assert env.market_window_shape == (4, 2)
+    with pytest.raises(AttributeError):
+        env.market_window_shape = (5, 2)
+
+
+def test_run_episode_shape_and_snapshot_behavior():
+    mdata = _create_eval_market_data(num_states=11)
+
+    def make_env():
+        return build_trading_environment(
+            market_data=mdata,
+            episode_steps=3,
+            n_consecutive_window=None,
+        )
+
+    vec_env = DummyVecEnv([make_env])
+    result = run_episode(vec_env, lambda obs: np.array([Action.HOLD.value]))
+
+    assert isinstance(result, EpisodeResult)
+    assert isinstance(result.total_reward, float)
+    assert isinstance(result.steps, tuple)
+    assert len(result.steps) == 3
+
+    with pytest.raises(Exception):
+        result.total_reward = 1.0
+
+    first_step = result.steps[0]
+    first_step['step_index'] = 999
+    assert result.steps[0]['step_index'] == 999
+
+    result2 = run_episode(vec_env, lambda obs: np.array([Action.HOLD.value]))
+    assert first_step is not result2.steps[0]
+    assert result2.steps[0]['step_index'] == 3

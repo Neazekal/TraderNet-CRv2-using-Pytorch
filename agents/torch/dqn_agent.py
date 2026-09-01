@@ -25,37 +25,6 @@ import numpy as np
 from stable_baselines3 import DQN
 from stable_baselines3.common.vec_env import VecEnv
 
-# Note: Custom Q-network is available in agents.torch.networks
-# from agents.torch.networks import QNetwork
-
-
-# =============================================================================
-# CUSTOM POLICY NOTE:
-# =============================================================================
-# To use our custom QNetwork with SB3's DQN, we need to define a custom
-# QNetwork class that inherits from SB3's BasePolicy or create a custom
-# feature extractor.
-#
-# Steps to integrate custom Q-network:
-# 1. Create a custom feature extractor using LSTMEncodingNetwork
-# 2. Define custom policy_kwargs with the feature extractor
-# 3. Pass policy_kwargs to DQN initialization
-#
-# Example:
-#   from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-#
-#   class CustomQNetworkExtractor(BaseFeaturesExtractor):
-#       def __init__(self, observation_space, features_dim=256):
-#           super().__init__(observation_space, features_dim)
-#           self.encoder = LSTMEncodingNetwork(...)
-#
-#   policy_kwargs = dict(
-#       features_extractor_class=CustomQNetworkExtractor,
-#       features_extractor_kwargs=dict(features_dim=256),
-#   )
-#
-#   agent = DQNAgent(env, policy_kwargs=policy_kwargs)
-# =============================================================================
 
 
 class DQNAgent:
@@ -72,7 +41,7 @@ class DQNAgent:
     def __init__(
             self,
             env: Union[VecEnv, Any],
-            policy: str = "MlpPolicy",
+            policy: Union[str, type] = "MlpPolicy",
             learning_rate: float = 1e-4,
             buffer_size: int = 1000000,
             learning_starts: int = 50000,
@@ -90,6 +59,7 @@ class DQNAgent:
             verbose: int = 1,
             seed: Optional[int] = None,
             device: str = "auto",
+            policy_kwargs: Optional[dict] = None,
             **kwargs,
     ):
         """Initialize the DQN Agent.
@@ -134,6 +104,7 @@ class DQNAgent:
             exploration_final_eps=exploration_final_eps,
             max_grad_norm=max_grad_norm,
             tensorboard_log=tensorboard_log,
+            policy_kwargs=policy_kwargs,
             verbose=verbose,
             seed=seed,
             device=device,

@@ -54,6 +54,9 @@ Evaluate trained agents on the evaluation split using the updated 4-action portf
 - PnL / Step Records CSV: `experiments/tradernet/{agent_name}/{dataset_name}_Portfolio-Simulator_eval_cumul_pnls.csv` from standalone `eval.py`
   - Contains: `step_index`, `timestamp`, `position`, `equity`, `cumulative_pnl`, `cumulative_return`, `buy_and_hold_position`, `buy_and_hold_equity`, `buy_and_hold_cumulative_pnl`, `buy_and_hold_cumulative_return`, `fee_paid`, `slippage_cost`, `turnover`, etc.
 
+- Shared evaluation runner: `evaluation.py:run_episode` owns reset, stepping, reward accumulation, and step snapshots; policy decisions remain action selectors in `eval.py` and `integrated.py`.
+- Dataset paths are resolved at orchestration boundaries; dataset-facing functions receive complete paths.
+
 ## 5. Visualization
 Visualize the evaluation performance across different agents and strategies.
 - **Script**: `plot_results.py`.

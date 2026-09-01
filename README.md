@@ -150,6 +150,7 @@ pytest
 *   `train_smurf.py`: Training script for Smurf scenario.
 *   `eval.py`: Evaluation script for standalone models.
 *   `integrated.py`: Evaluation script for hybrid / integrated models.
+*   `evaluation.py`: Shared vectorized episode runner and typed step records.
 *   `validate_environment.py`: Synthetic SB3/lifecycle environment validator.
 *   `download_olhcv.py`: Data downloader.
 

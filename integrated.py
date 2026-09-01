@@ -8,37 +8,20 @@ import torch
 import config
 from environments.actions import Action
 from eval import build_eval_env, load_agent
+from evaluation import run_episode
 
 
-def eval_tradernet_smurf(tradernet_agent, smurf_agent, env):
-    obs = env.reset()
-    cumulative_rewards = 0.0
-    step_records = []
-
-    while True:
-        # 1. Ask Smurf Agent ("Should I HOLD?")
+def eval_tradernet_smurf(tradernet_agent, smurf_agent, env) -> tuple[float, list[dict]]:
+    def select_action(obs: np.ndarray) -> np.ndarray:
         smurf_action, _ = smurf_agent.predict(obs, deterministic=True)
         smurf_action_val = int(smurf_action[0])
-
-        # 2. Decide Action
         if smurf_action_val == Action.HOLD.value:
-            final_action = smurf_action
-        else:
-            # If Smurf says "Not HOLD", ask TraderNet for the specific trade action
-            tradernet_action, _ = tradernet_agent.predict(obs, deterministic=True)
-            final_action = tradernet_action
+            return smurf_action
+        tradernet_action, _ = tradernet_agent.predict(obs, deterministic=True)
+        return tradernet_action
 
-        # 3. Step Environment
-        obs, reward, done, info = env.step(final_action)
-
-        reward_val = float(reward[0])
-        cumulative_rewards += reward_val
-        step_records.append(info[0])
-
-        if done[0]:
-            break
-
-    return cumulative_rewards, step_records
+    result = run_episode(env, select_action)
+    return result.total_reward, list(result.steps)
 
 
 if __name__ == "__main__":
@@ -59,8 +42,9 @@ if __name__ == "__main__":
         for dataset_name, dataset_filepath in config.datasets_dict.items():
             print(f"Evaluating Integrated {pair['name']} on {dataset_name} with {scenario_name}...")
 
+            full_dataset_path = config.dataset_save_filepath.format(dataset_filepath)
             env = build_eval_env(
-                dataset_filepath=dataset_filepath,
+                dataset_path=full_dataset_path,
                 **config.env_config
             )
 

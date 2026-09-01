@@ -25,37 +25,6 @@ import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecEnv
 
-# Note: Custom networks are available in agents.torch.networks
-# from agents.torch.networks import ActorNetwork, ValueNetwork
-
-
-# =============================================================================
-# CUSTOM POLICY NOTE:
-# =============================================================================
-# To use our custom ActorNetwork and ValueNetwork with SB3's PPO, we need to
-# define a CustomActorCriticPolicy that inherits from ActorCriticPolicy.
-#
-# Steps to integrate custom networks:
-# 1. Create a custom feature extractor that uses LSTMEncodingNetwork
-# 2. Define CustomActorCriticPolicy with custom actor and critic networks
-# 3. Register the policy or pass it directly to PPO
-#
-# Example:
-#   from stable_baselines3.common.policies import ActorCriticPolicy
-#   from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-#
-#   class CustomFeaturesExtractor(BaseFeaturesExtractor):
-#       def __init__(self, observation_space, features_dim=256):
-#           super().__init__(observation_space, features_dim)
-#           self.encoder = LSTMEncodingNetwork(...)
-#
-#   class CustomActorCriticPolicy(ActorCriticPolicy):
-#       def __init__(self, *args, **kwargs):
-#           super().__init__(*args, **kwargs,
-#               features_extractor_class=CustomFeaturesExtractor)
-#
-#   agent = PPOAgent(env, policy_class=CustomActorCriticPolicy)
-# =============================================================================
 
 
 class PPOAgent:
@@ -73,7 +42,7 @@ class PPOAgent:
     def __init__(
             self,
             env: Union[VecEnv, Any],
-            policy: str = "MlpPolicy",
+            policy: Union[str, type] = "MlpPolicy",
             learning_rate: float = 3e-4,
             n_steps: int = 2048,
             batch_size: int = 64,
@@ -88,6 +57,7 @@ class PPOAgent:
             verbose: int = 1,
             seed: Optional[int] = None,
             device: str = "auto",
+            policy_kwargs: Optional[dict] = None,
             **kwargs,
     ):
         """Initialize the PPO Agent.
@@ -126,6 +96,7 @@ class PPOAgent:
             vf_coef=vf_coef,
             max_grad_norm=max_grad_norm,
             tensorboard_log=tensorboard_log,
+            policy_kwargs=policy_kwargs,
             verbose=verbose,
             seed=seed,
             device=device,

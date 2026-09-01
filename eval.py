@@ -11,9 +11,10 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from database.datasets.utils import prepare_eval_dataset
 from environments.factory import build_trading_environment
 from environments.actions import Action
+from evaluation import run_episode
 
 def build_eval_env(
-    dataset_filepath: str,
+    dataset_path: str,
     timeframe_size: int,
     num_eval_samples: int,
     initial_equity: float,
@@ -25,12 +26,11 @@ def build_eval_env(
     **kwargs
 ) -> DummyVecEnv:
     eval_data = prepare_eval_dataset(
-        dataset_path=config.dataset_save_filepath.format(dataset_filepath),
+        dataset_path=dataset_path,
         feature_columns=config.regression_features,
         timeframe_size=timeframe_size,
         num_eval_samples=num_eval_samples,
     )
-
     def make_env():
         env = build_trading_environment(
             market_data=eval_data,
@@ -62,48 +62,27 @@ def load_agent(agent_class, checkpoint_filepath, env, device: str = "cpu"):
         return None
 
 
-def eval_tradernet(agent, env):
-    obs = env.reset()
-    cumulative_rewards = 0.0
-    step_records = []
-
-    while True:
+def eval_tradernet(agent, env) -> tuple[float, list[dict]]:
+    def select_action(obs: np.ndarray) -> np.ndarray:
         action, _ = agent.predict(obs, deterministic=True)
-        obs, reward, done, info = env.step(action)
+        return action
 
-        reward_val = float(reward[0])
-        cumulative_rewards += reward_val
-        step_records.append(info[0])
-
-        if done[0]:
-            break
-
-    return cumulative_rewards, step_records
+    result = run_episode(env, select_action)
+    return result.total_reward, list(result.steps)
 
 
 def eval_buy_and_hold(env) -> tuple[float, list[dict]]:
-    obs = env.reset()
-    cumulative_rewards = 0.0
-    step_records = []
     is_first_step = True
 
-    while True:
+    def select_action(obs: np.ndarray) -> np.ndarray:
+        nonlocal is_first_step
         if is_first_step:
-            action = np.array([Action.BUY.value])
             is_first_step = False
-        else:
-            action = np.array([Action.HOLD.value])
+            return np.array([Action.BUY.value])
+        return np.array([Action.HOLD.value])
 
-        obs, reward, done, info = env.step(action)
-
-        reward_val = float(reward[0])
-        cumulative_rewards += reward_val
-        step_records.append(info[0])
-
-        if done[0]:
-            break
-
-    return cumulative_rewards, step_records
+    result = run_episode(env, select_action)
+    return result.total_reward, list(result.steps)
 
 
 if __name__ == "__main__":
@@ -113,8 +92,9 @@ if __name__ == "__main__":
         for dataset_name, dataset_filepath in config.datasets_dict.items():
             print(f"Evaluating {agent_name} on {dataset_name} with {scenario_name}...")
 
+            full_dataset_path = config.dataset_save_filepath.format(dataset_filepath)
             env = build_eval_env(
-                dataset_filepath=dataset_filepath,
+                dataset_path=full_dataset_path,
                 **config.env_config
             )
 
@@ -138,7 +118,7 @@ if __name__ == "__main__":
 
             bh_env_config = {**config.env_config, 'n_consecutive_window': None}
             bh_env = build_eval_env(
-                dataset_filepath=dataset_filepath,
+                dataset_path=full_dataset_path,
                 **bh_env_config
             )
             bh_rewards, bh_step_records = eval_buy_and_hold(

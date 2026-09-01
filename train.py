@@ -14,7 +14,7 @@ from environments.factory import build_trading_environment
 
 
 def train(
-    dataset_filepath: str,
+    dataset_path: str,
     timeframe_size: int,
     num_eval_samples: int,
     initial_equity: float,
@@ -31,7 +31,7 @@ def train(
     **kwargs
 ):
     train_data, eval_data = prepare_train_eval_dataset(
-        dataset_path=config.dataset_save_filepath.format(dataset_filepath),
+        dataset_path=dataset_path,
         feature_columns=config.regression_features,
         timeframe_size=timeframe_size,
         num_eval_samples=num_eval_samples,
@@ -113,8 +113,9 @@ def run_experiments(experiment_name: str):
             )
             os.makedirs(checkpoint_filepath, exist_ok=True)
 
+            full_dataset_path = config.dataset_save_filepath.format(dataset_filepath)
             train_params = {
-                'dataset_filepath': dataset_filepath,
+                'dataset_path': full_dataset_path,
                 'checkpoint_filepath': checkpoint_filepath,
                 **config.env_config,
                 **agent_params,

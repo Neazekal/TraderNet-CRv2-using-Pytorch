@@ -71,6 +71,11 @@ class TradingEnvironment(gym.Env):
         return self._simulator
 
     @property
+    def market_window_shape(self) -> tuple[int, int]:
+        shape = self._market_data.states.shape[1:]
+        return (int(shape[0]), int(shape[1]))
+
+    @property
     def metrics(self) -> list[Metric]:
         return list(self._metrics)
 
