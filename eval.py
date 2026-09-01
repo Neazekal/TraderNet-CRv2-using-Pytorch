@@ -10,7 +10,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from database.datasets.utils import prepare_eval_dataset
 from environments.factory import build_trading_environment
-
+from environments.actions import Action
 
 def build_eval_env(
     dataset_filepath: str,
@@ -81,6 +81,31 @@ def eval_tradernet(agent, env):
     return cumulative_rewards, step_records
 
 
+def eval_buy_and_hold(env) -> tuple[float, list[dict]]:
+    obs = env.reset()
+    cumulative_rewards = 0.0
+    step_records = []
+    is_first_step = True
+
+    while True:
+        if is_first_step:
+            action = np.array([Action.BUY.value])
+            is_first_step = False
+        else:
+            action = np.array([Action.HOLD.value])
+
+        obs, reward, done, info = env.step(action)
+
+        reward_val = float(reward[0])
+        cumulative_rewards += reward_val
+        step_records.append(info[0])
+
+        if done[0]:
+            break
+
+    return cumulative_rewards, step_records
+
+
 if __name__ == "__main__":
     scenario_name = "Portfolio-Simulator"
 
@@ -111,16 +136,46 @@ if __name__ == "__main__":
                 env=env
             )
 
+            bh_env_config = {**config.env_config, 'n_consecutive_window': None}
+            bh_env = build_eval_env(
+                dataset_filepath=dataset_filepath,
+                **bh_env_config
+            )
+            bh_rewards, bh_step_records = eval_buy_and_hold(
+                env=bh_env
+            )
+
+            if len(step_records) != len(bh_step_records):
+                raise ValueError(
+                    f"Record length mismatch: learned has {len(step_records)} records, "
+                    f"buy-and-hold has {len(bh_step_records)} records."
+                )
+
+            for idx, (lr_rec, bh_rec) in enumerate(zip(step_records, bh_step_records)):
+                if lr_rec['step_index'] != bh_rec['step_index'] or lr_rec['timestamp'] != bh_rec['timestamp']:
+                    raise ValueError(
+                        f"Alignment mismatch at step {idx}: "
+                        f"learned step_index={lr_rec.get('step_index')}, timestamp={lr_rec.get('timestamp')} vs "
+                        f"buy-and-hold step_index={bh_rec.get('step_index')}, timestamp={bh_rec.get('timestamp')}"
+                    )
+
             base_env = env.envs[0].unwrapped
             episode_metrics = base_env.get_metrics()
 
             final_equity = step_records[-1]['equity'] if step_records else config.env_config['initial_equity']
             cumulative_return = step_records[-1]['cumulative_return'] if step_records else 0.0
 
+            bh_final_equity = bh_step_records[-1]['equity'] if bh_step_records else config.env_config['initial_equity']
+            bh_cumulative_return = bh_step_records[-1]['cumulative_return'] if bh_step_records else 0.0
+            excess_cumulative_return = cumulative_return - bh_cumulative_return
+
             metrics = {
                 'average_returns': [average_returns],
                 'final_equity': [final_equity],
                 'cumulative_return': [cumulative_return],
+                'buy_and_hold_final_equity': [bh_final_equity],
+                'buy_and_hold_cumulative_return': [bh_cumulative_return],
+                'excess_cumulative_return': [excess_cumulative_return],
                 **{
                     metric.name: [float(np.mean(metric.episode_metrics))] if len(metric.episode_metrics) > 0 else [float(metric.result())]
                     for metric in episode_metrics
@@ -135,7 +190,12 @@ if __name__ == "__main__":
             print(results_df, '\n')
 
             episode_pnls_df = pd.DataFrame(step_records)
+            episode_pnls_df['buy_and_hold_position'] = [r['position'] for r in bh_step_records]
+            episode_pnls_df['buy_and_hold_equity'] = [r['equity'] for r in bh_step_records]
+            episode_pnls_df['buy_and_hold_cumulative_pnl'] = [r['cumulative_pnl'] for r in bh_step_records]
+            episode_pnls_df['buy_and_hold_cumulative_return'] = [r['cumulative_return'] for r in bh_step_records]
+
             output_pnls_path = f'experiments/tradernet/{agent_name}/{dataset_name}_{scenario_name}_eval_cumul_pnls.csv'
             episode_pnls_df.to_csv(output_pnls_path, index=False)
 
-            print(episode_pnls_df[['step_index', 'position', 'equity', 'cumulative_pnl', 'cumulative_return']].tail(5))
+            print(episode_pnls_df[['step_index', 'position', 'equity', 'cumulative_pnl', 'cumulative_return', 'buy_and_hold_equity', 'buy_and_hold_cumulative_pnl']].tail(5))

@@ -23,6 +23,13 @@ In Phase 2, the legacy heuristic reward matrix was replaced with a causal, singl
     *   Position reversal (Long $\leftrightarrow$ Short) incurs two fills (closing old position, opening new position) with two fees and slippages.
     *   Terminal liquidation: Open positions are liquidated at current mark close upon episode end or data end.
 *   **Observation Space**: Flattened state window + portfolio state vector: $\text{Box}(W \times F + 2)$ of dtype `float32`, containing the technical feature matrix, current position sign, and relative return.
+*   **Cost-Aware Buy-and-Hold Baseline**:
+    *   Evaluates an aligned benchmark executing `BUY` at the first evaluation execution open and `HOLD` thereafter.
+    *   Runs with identical capital parameters (`initial_equity`, `fee_rate`, `slippage_rate`, `position_size`, `leverage`) and terminal mark-close liquidation.
+    *   Evaluated in a separate rule-free environment (`n_consecutive_window=None`) for immediate step-0 entry and pairwise step validation.
+    *   Summary metrics CSV (`_Portfolio-Simulator_metrics.csv`) records `buy_and_hold_final_equity`, `buy_and_hold_cumulative_return`, and `excess_cumulative_return` (`cumulative_return - buy_and_hold_cumulative_return`).
+    *   Step records CSV (`_Portfolio-Simulator_eval_cumul_pnls.csv`) records `buy_and_hold_position`, `buy_and_hold_equity`, `buy_and_hold_cumulative_pnl`, and `buy_and_hold_cumulative_return`.
+*   **Legacy Artifact Incompatibility**: Legacy scenario artifacts (`Market-Orders`, `Market-Limit Orders`) are incompatible inputs, not migration candidates, and are ignored by evaluation and visualization tools. Canonical outputs strictly follow the `Portfolio-Simulator` scenario.
 *   **Retrain Requirement**: Due to action space change (`Discrete(4)`) and observation space expansion (`Box(W*F+2,)`), models trained on Phase 1 are incompatible and must be retrained.
 *   **Phase 2 Scope & Assumptions**:
     *   Single-asset Long/Short execution with fixed units between rebalances.
@@ -116,8 +123,13 @@ Integrated / Hybrid evaluation (TraderNet + Smurf):
 python integrated.py
 ```
 
-Metrics and PnL curves will be saved to `experiments/tradernet/` and `experiments/integrated/`.
+Standalone evaluation writes aligned buy-and-hold baseline and excess-return fields under `experiments/tradernet/`. Integrated evaluation writes its existing strategy artifacts under `experiments/integrated/`; `plot_results.py` combines canonical standard, integrated, and deduplicated baseline curves.
 
+Visualize results:
+```bash
+python plot_results.py
+```
+`plot_results.py` consumes only canonical `*_Portfolio-Simulator_eval_cumul_pnls.csv` files and plots standard, integrated, and deduplicated buy-and-hold curves.
 ### 6. Run Tests
 Run automated unit and integration tests:
 

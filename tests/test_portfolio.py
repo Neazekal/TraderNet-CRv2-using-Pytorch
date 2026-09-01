@@ -235,3 +235,61 @@ def test_portfolio_bankruptcy_recovery():
     assert sim.equity == 10000.0
     assert sim.bankrupt is False
     assert sim.done is False
+
+
+def test_portfolio_flat_price_round_trip_cost_comparison():
+    # Flat price series where all opens and closes are identical
+    opens = [100.0, 100.0]
+    closes = [100.0, 100.0]
+    mdata = _build_simple_market_data(opens, closes)
+    initial_equity = 10000.0
+
+    # 1. Zero cost simulator
+    sim_zero = PortfolioSimulator(
+        market_data=mdata,
+        initial_equity=initial_equity,
+        fee_rate=0.0,
+        slippage_rate=0.0,
+        position_size=1.0,
+        leverage=1.0,
+    )
+    res0_zero = sim_zero.step(Action.BUY.value, Action.BUY.value, is_terminal_step=False)
+    res1_zero = sim_zero.step(Action.HOLD.value, Action.HOLD.value, is_terminal_step=True)
+
+    assert res0_zero.fee_paid == 0.0
+    assert res0_zero.slippage_cost == 0.0
+    assert res1_zero.fee_paid == 0.0
+    assert res1_zero.slippage_cost == 0.0
+    # Zero fee/slippage round trip ends exactly at initial equity
+    assert res1_zero.equity == pytest.approx(initial_equity)
+    assert res1_zero.cumulative_pnl == pytest.approx(0.0)
+    assert res1_zero.cumulative_return == pytest.approx(0.0)
+
+    # 2. Identical nonzero-cost simulator
+    sim_cost = PortfolioSimulator(
+        market_data=mdata,
+        initial_equity=initial_equity,
+        fee_rate=0.005,
+        slippage_rate=0.001,
+        position_size=1.0,
+        leverage=1.0,
+    )
+    res0_cost = sim_cost.step(Action.BUY.value, Action.BUY.value, is_terminal_step=False)
+    res1_cost = sim_cost.step(Action.HOLD.value, Action.HOLD.value, is_terminal_step=True)
+
+    # Nonzero fees and slippage on both entry and terminal liquidation
+    assert res0_cost.fee_paid > 0.0
+    assert res0_cost.slippage_cost > 0.0
+    assert res1_cost.fee_paid > 0.0
+    assert res1_cost.slippage_cost > 0.0
+
+    total_fees = res0_cost.fee_paid + res1_cost.fee_paid
+    total_slippage = res0_cost.slippage_cost + res1_cost.slippage_cost
+    assert total_fees > 0.0
+    assert total_slippage > 0.0
+
+    # Negative net PnL and lower final equity due to transaction costs
+    assert res1_cost.cumulative_pnl < 0.0
+    assert res1_cost.net_pnl < 0.0
+    assert res1_cost.equity < initial_equity
+    assert res1_cost.equity < res1_zero.equity

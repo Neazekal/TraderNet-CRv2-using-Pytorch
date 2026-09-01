@@ -8,8 +8,10 @@ def plot_results():
     experiments_dir = 'experiments'
     tradernet_dir = os.path.join(experiments_dir, 'tradernet')
     integrated_dir = os.path.join(experiments_dir, 'integrated')
+    canonical_suffix = '_Portfolio-Simulator_eval_cumul_pnls.csv'
 
     data = []
+    seen_baseline_datasets = set()
 
     # 1. TraderNet Results
     if os.path.exists(tradernet_dir):
@@ -19,23 +21,32 @@ def plot_results():
                 continue
 
             for filename in sorted(os.listdir(agent_dir)):
-                if filename.endswith('_eval_cumul_pnls.csv'):
+                if filename.endswith(canonical_suffix):
                     filepath = os.path.join(agent_dir, filename)
                     try:
                         df = pd.read_csv(filepath)
                     except Exception:
                         continue
 
-                    if 'cumulative_pnl' not in df.columns:
-                        continue
+                    if 'cumulative_pnl' in df.columns:
+                        for i, val in enumerate(df['cumulative_pnl']):
+                            data.append({
+                                'Step': i,
+                                'Cumulative PnL': val,
+                                'Agent': agent_name,
+                                'Type': 'Standard'
+                            })
 
-                    for i, val in enumerate(df['cumulative_pnl']):
-                        data.append({
-                            'Step': i,
-                            'Cumulative PnL': val,
-                            'Agent': agent_name,
-                            'Type': 'Standard'
-                        })
+                    dataset_name = filename[:-len(canonical_suffix)]
+                    if dataset_name not in seen_baseline_datasets and 'buy_and_hold_cumulative_pnl' in df.columns:
+                        seen_baseline_datasets.add(dataset_name)
+                        for i, val in enumerate(df['buy_and_hold_cumulative_pnl']):
+                            data.append({
+                                'Step': i,
+                                'Cumulative PnL': val,
+                                'Agent': f"Buy & Hold ({dataset_name})" if dataset_name else "Buy & Hold",
+                                'Type': 'Baseline'
+                            })
 
     # 2. Integrated Results
     if os.path.exists(integrated_dir):
@@ -45,7 +56,7 @@ def plot_results():
                 continue
 
             for filename in sorted(os.listdir(agent_dir)):
-                if filename.endswith('_eval_cumul_pnls.csv'):
+                if filename.endswith(canonical_suffix):
                     filepath = os.path.join(agent_dir, filename)
                     try:
                         df = pd.read_csv(filepath)
@@ -62,7 +73,6 @@ def plot_results():
                             'Agent': f"{agent_name} (Integrated)",
                             'Type': 'Integrated'
                         })
-
     if not data:
         print("No result files found in experiments/")
         return
